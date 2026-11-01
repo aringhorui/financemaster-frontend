@@ -278,7 +278,7 @@ function EnvelopeStrip({ summary }) {
           )
         })}
       </div>
-      {showPace && <p className="hint">The thin line in each bar marks an even daily pace for today. Hover a bar for details, click to see its expenses.</p>}
+      {showPace && <p className="hint">The thin line in each bar marks an even daily pace for today. <span className="pointer-hint">Hover a bar for details, click to see its expenses.</span><span className="touch-hint">Tap a bar to see its expenses.</span></p>}
     </section>
   )
 }

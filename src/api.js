@@ -46,7 +46,14 @@ async function request(path, { method = 'GET', body, params } = {}) {
       window.dispatchEvent(new Event('fm:logout'))
       throw new ApiError('Session expired. Please log in again.', res.status)
     }
-    let message = (data && data.error) || (typeof data === 'string' && data) || `Request failed (${res.status})`
+    // Proxies and tunnels answer some failures with an HTML page; show a short message instead of it
+    const html = typeof data === 'string' && /^\s*</.test(data)
+    const unreachable = [502, 503, 504, 520, 521, 522, 523, 524, 530].includes(res.status)
+    let message =
+      (data && data.error) ||
+      (html && unreachable && `Couldn't reach the server (HTTP ${res.status}). Check that the backend and tunnel are running, then try again.`) ||
+      (typeof data === 'string' && !html && data.slice(0, 300)) ||
+      `Request failed (HTTP ${res.status})`
     if (data && data.details) message += ': ' + Object.values(data.details).join(', ')
     throw new ApiError(message, res.status)
   }
@@ -123,5 +130,7 @@ export const api = {
     create: (body) => request('/expense/create', { method: 'POST', body }),
     edit: (body) => request('/expense/edit', { method: 'PUT', body }),
     remove: (transactionId) => request('/expense/delete', { method: 'DELETE', body: { transactionId } }),
+    removeMany: (transactionIds) => request('/expense/delete-bulk', { method: 'DELETE', body: { transactionIds } }),
+    removeMatching: (filter, expectedCount) => request('/expense/delete-matching', { method: 'DELETE', body: { filter, expectedCount } }),
   },
 }

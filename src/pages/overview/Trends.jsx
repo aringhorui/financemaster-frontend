@@ -233,7 +233,7 @@ function TrendTable({ rows, onOpen }) {
     <div className="table-wrap">
       <table className="trend-table">
         <thead>
-          <tr><th>Name</th><th>Trend</th><th className="num">Previous</th><th className="num">Selected</th><th className="num">Change</th></tr>
+          <tr><th>Name</th><th className="hide-phone">Trend</th><th className="num hide-phone">Previous</th><th className="num">Selected</th><th className="num">Change</th></tr>
         </thead>
         <tbody>
           {rows.map((r) => {
@@ -249,8 +249,8 @@ function TrendTable({ rows, onOpen }) {
                     <div>{r.name}{r.sub && <div className="muted" style={{ fontSize: '0.8rem' }}>{r.sub}</div>}</div>
                   </div>
                 </td>
-                <td><Sparkline values={r.monthly} color={r.color} /></td>
-                <td className="num amount">{fmt0(before)}</td>
+                <td className="hide-phone"><Sparkline values={r.monthly} color={r.color} /></td>
+                <td className="num amount hide-phone">{fmt0(before)}</td>
                 <td className="num amount">
                   {fmt0(now)}
                   {r.budget > 0 && <div className="muted" style={{ fontSize: '0.75rem' }}>of {fmt0(r.budget)}</div>}

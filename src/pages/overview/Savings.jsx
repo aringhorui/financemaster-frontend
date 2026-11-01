@@ -157,8 +157,8 @@ export default function Savings({ month, onSelectMonth }) {
             <table className="trend-table">
               <thead>
                 <tr>
-                  <th>Month</th><th className="num">Income</th><th className="num">Budget</th><th className="num">Spent</th>
-                  <th className="num">vs budget</th><th className="num">Saved and invested</th><th className="num">Rate</th>
+                  <th>Month</th><th className="num">Income</th><th className="num hide-phone">Budget</th><th className="num">Spent</th>
+                  <th className="num hide-phone">vs budget</th><th className="num hide-phone">Saved and invested</th><th className="num">Rate</th>
                 </tr>
               </thead>
               <tbody>
@@ -168,12 +168,12 @@ export default function Savings({ month, onSelectMonth }) {
                     <tr key={m.month}>
                       <td>{shortMonth(m.month)} {m.month.slice(0, 4)}</td>
                       <td className="num amount">{m.income ? fmt0(m.income) : '—'}</td>
-                      <td className="num amount">{m.budget ? fmt0(m.budget) : '—'}</td>
+                      <td className="num amount hide-phone">{m.budget ? fmt0(m.budget) : '—'}</td>
                       <td className="num amount">{fmt0(m.spent)}</td>
-                      <td className={`num delta ${m.budget ? (diff > 0 ? 'up' : 'down') : 'flat'}`}>
+                      <td className={`num delta hide-phone ${m.budget ? (diff > 0 ? 'up' : 'down') : 'flat'}`}>
                         {m.budget ? `${diff > 0 ? '+' : '−'}${fmt0(Math.abs(diff))}` : '—'}
                       </td>
-                      <td className={`num amount ${m.savedAndInvested < 0 ? 'neg' : ''}`}>{m.income ? fmt0(m.savedAndInvested) : '—'}</td>
+                      <td className={`num amount hide-phone ${m.savedAndInvested < 0 ? 'neg' : ''}`}>{m.income ? fmt0(m.savedAndInvested) : '—'}</td>
                       <td className="num amount">{pct(m.savingsRate)}</td>
                     </tr>
                   )

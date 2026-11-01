@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { Download, Search, SlidersHorizontal, X } from 'lucide-react'
+import { Download, Search, SlidersHorizontal, Trash2, X } from 'lucide-react'
 import { api } from '../api'
 import { Drawer, PageHeader } from '../components/Layout'
 import { categoryColor, fmt, nowLocalInput, toBackendDateTime, toLocalInput } from '../format'
@@ -37,6 +37,26 @@ const toQuery = (f) => ({
   endDate: f.endDate && `${f.endDate}T23:59:59`,
 })
 
+/** Filters in the shape the delete-matching endpoint expects. */
+const toFilterBody = (f) => {
+  const q = toQuery(f)
+  return {
+    categoryId: q.categoryId || null,
+    subCategoryId: q.subCategoryId || null,
+    paymentMethodId: q.paymentMethodId || null,
+    bankAccountId: q.bankAccountId && q.bankAccountId !== 'none' ? q.bankAccountId : null,
+    noBankAccount: q.bankAccountId === 'none',
+    minAmount: q.minAmount === '' ? null : Number(q.minAmount),
+    maxAmount: q.maxAmount === '' ? null : Number(q.maxAmount),
+    startDate: q.startDate || null,
+    endDate: q.endDate || null,
+    search: q.q || null,
+  }
+}
+
+// Above this many, or when deleting everything that matches, the user types DELETE to confirm
+const TYPE_TO_CONFIRM = 50
+
 const shortDate = (iso) => new Date(`${iso}T00:00:00`).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
 
 export default function Expenses() {
@@ -53,6 +73,15 @@ export default function Expenses() {
     setParams(n)
   }
   const [editing, setEditing] = useState(null) // null = closed, {} = new, expense = edit
+  const [selected, setSelected] = useState(() => new Set()) // transaction ids
+  const [allMatching, setAllMatching] = useState(false) // every expense matching the filters, across pages
+  const filterKey = Object.keys(FILTER_PARAMS).map((k) => filters[k]).join('|')
+
+  // A new filter means a new list: drop the selection
+  useEffect(() => {
+    setSelected(new Set())
+    setAllMatching(false)
+  }, [filterKey])
 
   useEffect(() => {
     run(async () => {
@@ -89,6 +118,51 @@ export default function Expenses() {
     const next = { ...filters, [k]: e.target.value }
     if (k === 'categoryId') next.subCategoryId = ''
     setFilters(next)
+  }
+
+  const pageIds = data.expenses.map((e) => e.transactionId)
+  const pageAllSelected = pageIds.length > 0 && pageIds.every((id) => selected.has(id))
+  const pageSomeSelected = pageIds.some((id) => selected.has(id))
+  const selectedCount = allMatching ? data.totalElements : selected.size
+
+  const toggle = (id) => {
+    setAllMatching(false)
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+  const togglePage = () => {
+    setAllMatching(false)
+    setSelected((prev) => {
+      const next = new Set(prev)
+      pageIds.forEach((id) => (pageAllSelected ? next.delete(id) : next.add(id)))
+      return next
+    })
+  }
+  const clearSelection = () => {
+    setSelected(new Set())
+    setAllMatching(false)
+  }
+
+  const removeSelected = () => {
+    const count = selectedCount
+    const what = `${count} ${count === 1 ? 'expense' : 'expenses'}`
+    if (allMatching || count >= TYPE_TO_CONFIRM) {
+      const typed = prompt(`This permanently deletes ${what}${allMatching ? ' — everything matching the current filters' : ''}. Type DELETE to confirm.`)
+      if (typed?.trim() !== 'DELETE') return
+    } else if (!confirm(`Delete ${what}? This can't be undone.`)) {
+      return
+    }
+    run(async () => {
+      if (allMatching) await api.expenses.removeMatching(toFilterBody(filters), data.totalElements)
+      else await api.expenses.removeMany([...selected])
+      clearSelection()
+      if (page > 0 && (allMatching || pageAllSelected)) setPage(0)
+      await load()
+    })
   }
 
   const remove = (exp) => {
@@ -239,17 +313,51 @@ export default function Expenses() {
         )}
       </div>
 
+      {selectedCount > 0 && (
+        <div className="bulk-bar" role="region" aria-label="Selected expenses">
+          <span><strong>{selectedCount}</strong> selected{allMatching && ' (all matching)'}</span>
+          {!allMatching && pageAllSelected && data.totalElements > pageIds.length && (
+            <button type="button" className="linkish" onClick={() => setAllMatching(true)}>
+              Select all {data.totalElements} matching
+            </button>
+          )}
+          <span className="grow" />
+          <button type="button" className="secondary small" onClick={clearSelection}>Clear</button>
+          <button type="button" className="danger-solid small" onClick={removeSelected} disabled={busy}>
+            <Trash2 size={14} /> Delete {selectedCount}
+          </button>
+        </div>
+      )}
+
       <div className="card flush table-wrap">
-        <table className="responsive">
+        <table className="responsive selectable">
           <thead>
             <tr>
+              <th className="select">
+                <input
+                  type="checkbox"
+                  aria-label="Select all on this page"
+                  checked={pageAllSelected}
+                  ref={(el) => el && (el.indeterminate = !pageAllSelected && pageSomeSelected)}
+                  onChange={togglePage}
+                  disabled={!pageIds.length}
+                />
+              </th>
               <th>Date</th><th>Category</th><th>Payment</th><th>Account</th><th>Notes</th>
               <th className="num">Amount</th><th />
             </tr>
           </thead>
           <tbody>
             {data.expenses.map((e) => (
-              <tr key={e.transactionId}>
+              <tr key={e.transactionId} className={allMatching || selected.has(e.transactionId) ? 'is-selected' : ''}>
+                <td className="select">
+                  <input
+                    type="checkbox"
+                    aria-label={`Select ${e.notes || e.subCategoryName} ${fmt(e.amount)}`}
+                    checked={allMatching || selected.has(e.transactionId)}
+                    onChange={() => toggle(e.transactionId)}
+                  />
+                </td>
                 <td className="meta">{new Date(e.transactionDate).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}</td>
                 <td className="primary"><div className="cat-cell"><span className="dot" style={{ background: categoryColor(e.categoryName) }} /><div>{e.categoryName}<div className="muted" style={{ fontSize: '0.8rem' }}>{e.subCategoryName}</div></div></div></td>
                 <td data-label="Paid with">{e.paymentMethodName}</td>
@@ -263,12 +371,12 @@ export default function Expenses() {
               </tr>
             ))}
             {data.expenses.length === 0 && (
-              <tr><td colSpan={7} className="empty">{busy ? 'Loading…' : 'No expenses match. Change the filters or add an expense.'}</td></tr>
+              <tr><td colSpan={8} className="empty">{busy ? 'Loading…' : 'No expenses match. Change the filters or add an expense.'}</td></tr>
             )}
           </tbody>
           {data.expenses.length > 0 && (
             <tfoot>
-              <tr><td colSpan={5} className="muted">Page total</td><td className="num"><strong>{fmt(pageTotal)}</strong></td><td /></tr>
+              <tr><td colSpan={6} className="muted">Page total</td><td className="num"><strong>{fmt(pageTotal)}</strong></td><td /></tr>
             </tfoot>
           )}
         </table>

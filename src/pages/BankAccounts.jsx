@@ -58,7 +58,7 @@ export default function BankAccounts() {
       </div>
 
       <div className="card flush table-wrap">
-        <table>
+        <table className="responsive">
           <thead>
             <tr><th>Name</th><th>Type</th><th className="num">Billing day</th><th className="num">Credit limit</th><th /></tr>
           </thead>
@@ -142,9 +142,9 @@ function Row({ account, run, busy, reload }) {
 
   return (
     <tr>
-      <td>{account.bankAccountName}</td>
-      <td><span className="tag">{isCredit ? 'Credit card' : 'Bank'}</span></td>
-      <td className="num">{account.creditCycle ?? '—'}</td>
+      <td className="primary">{account.bankAccountName}</td>
+      <td className="meta"><span className="tag">{isCredit ? 'Credit card' : 'Bank'}</span></td>
+      <td data-label="Billing day">{account.creditCycle ?? '—'}</td>
       <td className="num">{isCredit ? fmt(account.creditLimit) : '—'}</td>
       <td className="actions">
         <button className="secondary small" onClick={startEdit}>Edit</button>

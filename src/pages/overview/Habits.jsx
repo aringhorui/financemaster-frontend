@@ -87,7 +87,7 @@ export default function Habits({ month }) {
           </div>
           {habits.repeatItems.length ? (
             <div className="table-wrap"><table className="trend-table">
-              <thead><tr><th>Item</th><th className="num">Times</th><th className="num">Average</th><th className="num">Total</th></tr></thead>
+              <thead><tr><th>Item</th><th className="num">Times</th><th className="num hide-phone">Average</th><th className="num">Total</th></tr></thead>
               <tbody>
                 {habits.repeatItems.map((r) => (
                   <tr key={r.name}>
@@ -98,7 +98,7 @@ export default function Habits({ month }) {
                       </div>
                     </td>
                     <td className="num amount">×{r.count}</td>
-                    <td className="num amount">{fmt0(r.average)}</td>
+                    <td className="num amount hide-phone">{fmt0(r.average)}</td>
                     <td className="num amount">{fmt0(r.total)}</td>
                   </tr>
                 ))}

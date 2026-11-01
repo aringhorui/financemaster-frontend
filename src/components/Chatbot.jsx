@@ -75,7 +75,8 @@ export default function Chatbot() {
       setMessages((m) => [...m, { role: 'assistant', text: res.reply }])
     } catch (e) {
       setMessages((m) => [...m, { role: 'error', text: e.message }])
-      if (e.status === 503) setStatus({ configured: false })
+      // Only a missing key switches the chat off; other 503s are temporary Gemini problems
+      if (e.status === 503 && /isn't set up/.test(e.message)) setStatus({ configured: false })
     } finally {
       setSending(false)
     }
