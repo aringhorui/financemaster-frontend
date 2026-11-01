@@ -1045,3 +1045,23 @@ button.habit:hover:not(:disabled) { background: var(--row-hover); text-decoratio
 @media (prefers-reduced-motion: reduce) {
   .wr-slide, .wr-bar::before { animation: none; }
 }
+
+/* ───────── Expense filters ───────── */
+.filters .presets, .filters .filter-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; align-items: center; }
+.more-filters { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+.more-filters label { flex: 1 1 160px; }
+.more-filters input, .more-filters select { width: 100%; }
+.chip-btn {
+  display: inline-flex; align-items: center; gap: 5px; min-height: 30px; padding: 3px 12px; border-radius: 999px; font-size: 0.8rem; font-weight: 500;
+  background: transparent; color: var(--muted); border: 1px solid var(--line-strong);
+}
+.chip-btn:hover:not(:disabled) { background: var(--row-hover); color: var(--text); border-color: var(--line-strong); }
+.chip-btn.on, .chip-btn.on:hover:not(:disabled) { background: var(--accent-soft); color: var(--accent); border-color: color-mix(in srgb, var(--accent) 35%, transparent); }
+.icon-btn.on { border-color: color-mix(in srgb, var(--accent) 40%, transparent); color: var(--accent); }
+.icon-btn .count { display: inline-grid; place-items: center; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--accent); color: var(--on-accent); font-size: 11px; font-weight: 700; }
+.clear-all { color: var(--accent) !important; font-size: 0.8rem; margin-left: 4px; }
+@media (max-width: 700px) {
+  .more-filters label { flex: 1 1 calc(50% - 6px); }
+  .filters .presets { overflow-x: auto; flex-wrap: nowrap; scrollbar-width: none; }
+  .chip-btn { flex: none; min-height: 34px; }
+}

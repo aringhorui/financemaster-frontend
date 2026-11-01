@@ -1,35 +1,55 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { Download, Search } from 'lucide-react'
+import { Download, Search, SlidersHorizontal, X } from 'lucide-react'
 import { api } from '../api'
 import { Drawer, PageHeader } from '../components/Layout'
 import { categoryColor, fmt, nowLocalInput, toBackendDateTime, toLocalInput } from '../format'
 import { useAction } from '../useAsync'
+import { cycleOf, isoDate, monthRange, parseIso } from './overview/shared'
 
 const PAGE_SIZE = 20
+
+// Filter field -> URL parameter. Filters live in the URL so charts and bookmarks can link to a filtered list.
+const FILTER_PARAMS = {
+  q: 'q',
+  categoryId: 'categoryId',
+  subCategoryId: 'subCategoryId',
+  paymentMethodId: 'paymentMethodId',
+  bankAccountId: 'bankAccountId',
+  minAmount: 'min',
+  maxAmount: 'max',
+  startDate: 'from',
+  endDate: 'to',
+}
+const EMPTY_FILTERS = Object.fromEntries(Object.keys(FILTER_PARAMS).map((k) => [k, '']))
+const MORE_FILTERS = ['categoryId', 'subCategoryId', 'paymentMethodId', 'bankAccountId', 'minAmount', 'maxAmount']
+
+/** Filters as API query parameters. */
+const toQuery = (f) => ({
+  q: f.q,
+  categoryId: f.categoryId,
+  subCategoryId: f.subCategoryId,
+  paymentMethodId: f.paymentMethodId,
+  bankAccountId: f.bankAccountId,
+  minAmount: f.minAmount,
+  maxAmount: f.maxAmount,
+  startDate: f.startDate && `${f.startDate}T00:00:00`,
+  endDate: f.endDate && `${f.endDate}T23:59:59`,
+})
+
+const shortDate = (iso) => new Date(`${iso}T00:00:00`).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
 
 export default function Expenses() {
   const { busy, error, run } = useAction()
   const [lookups, setLookups] = useState({ categories: [], subcategories: [], paymentMethods: [], bankAccounts: [] })
   const [data, setData] = useState({ expenses: [], page: 0, totalPages: 0, totalElements: 0 })
-  // Filters live in the URL so charts can link straight to a filtered list (e.g. /expenses?from=…&categoryId=…)
   const [params, setParams] = useSearchParams()
-  const filters = {
-    categoryId: params.get('categoryId') || '',
-    subCategoryId: params.get('subCategoryId') || '',
-    startDate: params.get('from') || '',
-    endDate: params.get('to') || '',
-    q: params.get('q') || '',
-  }
+  const filters = Object.fromEntries(Object.entries(FILTER_PARAMS).map(([k, param]) => [k, params.get(param) || '']))
   const page = Number(params.get('page') || 0)
   const setPage = (p) => setParams((prev) => { const n = new URLSearchParams(prev); if (p) n.set('page', p); else n.delete('page'); return n })
   const setFilters = (f) => {
     const n = new URLSearchParams()
-    if (f.categoryId) n.set('categoryId', f.categoryId)
-    if (f.subCategoryId) n.set('subCategoryId', f.subCategoryId)
-    if (f.startDate) n.set('from', f.startDate)
-    if (f.endDate) n.set('to', f.endDate)
-    if (f.q) n.set('q', f.q)
+    Object.entries(FILTER_PARAMS).forEach(([k, param]) => f[k] && n.set(param, f[k]))
     setParams(n)
   }
   const [editing, setEditing] = useState(null) // null = closed, {} = new, expense = edit
@@ -54,15 +74,7 @@ export default function Expenses() {
   const load = useCallback(
     () =>
       run(async () => {
-        const res = await api.expenses.list({
-          categoryId: filters.categoryId,
-          subCategoryId: filters.subCategoryId,
-          startDate: filters.startDate && `${filters.startDate}T00:00:00`,
-          endDate: filters.endDate && `${filters.endDate}T23:59:59`,
-          q: filters.q,
-          page,
-          pageSize: PAGE_SIZE,
-        })
+        const res = await api.expenses.list({ ...toQuery(filters), page, pageSize: PAGE_SIZE })
         setData(res)
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -88,7 +100,40 @@ export default function Expenses() {
   }
 
   const pageTotal = data.expenses.reduce((s, e) => s + (e.amount || 0), 0)
-  const largest = data.expenses.reduce((m, e) => (e.amount > (m?.amount ?? 0) ? e : m), null)
+  const matchingTotal = data.totalAmount ?? pageTotal
+  const activeMore = MORE_FILTERS.filter((k) => filters[k]).length
+  const [showMore, setShowMore] = useState(activeMore > 0)
+
+  const nameOf = (list, idKey, nameKey, id) => list.find((x) => x[idKey] === id)?.[nameKey] ?? '…'
+  const chips = [
+    filters.q && { keys: ['q'], label: `“${filters.q}”` },
+    filters.categoryId && { keys: ['categoryId', 'subCategoryId'], label: `Category: ${nameOf(lookups.categories, 'categoryId', 'categoryName', filters.categoryId)}` },
+    filters.subCategoryId && { keys: ['subCategoryId'], label: `Subcategory: ${nameOf(lookups.subcategories, 'subcategoryId', 'subcategoryName', filters.subCategoryId)}` },
+    filters.paymentMethodId && { keys: ['paymentMethodId'], label: `Paid with: ${nameOf(lookups.paymentMethods, 'paymentMethodId', 'paymentMethodName', filters.paymentMethodId)}` },
+    filters.bankAccountId && { keys: ['bankAccountId'], label: `Account: ${filters.bankAccountId === 'none' ? 'None' : nameOf(lookups.bankAccounts, 'bankAccountId', 'bankAccountName', filters.bankAccountId)}` },
+    (filters.minAmount || filters.maxAmount) && {
+      keys: ['minAmount', 'maxAmount'],
+      label: filters.minAmount && filters.maxAmount ? `${fmt(+filters.minAmount)} – ${fmt(+filters.maxAmount)}` : filters.minAmount ? `At least ${fmt(+filters.minAmount)}` : `Up to ${fmt(+filters.maxAmount)}`,
+    },
+    (filters.startDate || filters.endDate) && {
+      keys: ['startDate', 'endDate'],
+      label: filters.startDate && filters.endDate ? `${shortDate(filters.startDate)} – ${shortDate(filters.endDate)}` : filters.startDate ? `From ${shortDate(filters.startDate)}` : `Until ${shortDate(filters.endDate)}`,
+    },
+  ].filter(Boolean)
+  const clearKeys = (keys) => setFilters({ ...filters, ...Object.fromEntries(keys.map((k) => [k, ''])) })
+
+  const today = new Date()
+  const current = monthRange(cycleOf())
+  const dayBeforeCycle = parseIso(current.from)
+  dayBeforeCycle.setDate(dayBeforeCycle.getDate() - 1)
+  const previous = monthRange(cycleOf(dayBeforeCycle))
+  const last30 = new Date(today)
+  last30.setDate(last30.getDate() - 29)
+  const presets = [
+    { label: 'This cycle', from: current.from, to: current.to },
+    { label: 'Last cycle', from: previous.from, to: previous.to },
+    { label: 'Last 30 days', from: isoDate(last30), to: isoDate(today) },
+  ]
 
   return (
     <>
@@ -104,9 +149,9 @@ export default function Expenses() {
       {error && <div className="error">{error}</div>}
 
       <div className="stats">
-        <div className="stat"><div className="label">Spent on this page</div><div className="value">{fmt(pageTotal)}</div></div>
-        <div className="stat"><div className="label">Matching transactions</div><div className="value">{data.totalElements}</div></div>
-        <div className="stat"><div className="label">Largest on this page</div><div className="value">{largest ? fmt(largest.amount) : '—'}</div></div>
+        <div className="stat"><div className="label">Total of matching expenses</div><div className="value">{fmt(matchingTotal)}</div></div>
+        <div className="stat"><div className="label">Matching expenses</div><div className="value">{data.totalElements}</div></div>
+        <div className="stat"><div className="label">Average expense</div><div className="value">{data.totalElements ? fmt(matchingTotal / data.totalElements) : '—'}</div></div>
       </div>
 
       {editing && (
@@ -121,30 +166,77 @@ export default function Expenses() {
         />
       )}
 
-      <div className="card">
+      <div className="card filters">
         <form className="row" onSubmit={(e) => e.preventDefault()}>
-          <SearchBox value={filters.q} onChange={(q) => setFilters({ ...filters, q })} />
-          <label>Category
-            <select value={filters.categoryId} onChange={setFilter('categoryId')}>
-              <option value="">All</option>
-              {lookups.categories.map((c) => <option key={c.categoryId} value={c.categoryId}>{c.categoryName}</option>)}
-            </select>
-          </label>
-          <label>Subcategory
-            <select value={filters.subCategoryId} onChange={setFilter('subCategoryId')}>
-              <option value="">All</option>
-              {lookups.subcategories
-                .filter((s) => !filters.categoryId || s.categoryId === filters.categoryId)
-                .map((s) => <option key={s.subcategoryId} value={s.subcategoryId}>{s.subcategoryName}</option>)}
-            </select>
-          </label>
-          <label>From<input type="date" value={filters.startDate} onChange={setFilter('startDate')} /></label>
-          <label>To<input type="date" value={filters.endDate} onChange={setFilter('endDate')} /></label>
-          <button type="button" className="secondary" onClick={() => setFilters({ categoryId: '', subCategoryId: '', startDate: '', endDate: '', q: '' })}>
-            Clear
+          <DebouncedInput className="search-box" icon={<Search size={15} />} type="search" placeholder="Search descriptions" ariaLabel="Search descriptions" value={filters.q} onChange={(q) => setFilters({ ...filters, q })} />
+          <label>From<input type="date" value={filters.startDate} max={filters.endDate || undefined} onChange={setFilter('startDate')} /></label>
+          <label>To<input type="date" value={filters.endDate} min={filters.startDate || undefined} onChange={setFilter('endDate')} /></label>
+          <button type="button" className={`icon-btn${showMore ? ' on' : ''}`} onClick={() => setShowMore(!showMore)} aria-expanded={showMore} aria-controls="more-filters">
+            <SlidersHorizontal size={15} /> More filters{activeMore > 0 && <span className="count">{activeMore}</span>}
           </button>
         </form>
-        <p className="hint">Filters combine. Charts on the Overview open this list already filtered.</p>
+
+        <div className="presets" role="group" aria-label="Date presets">
+          {presets.map((p) => (
+            <button
+              key={p.label}
+              type="button"
+              className={`chip-btn${filters.startDate === p.from && filters.endDate === p.to ? ' on' : ''}`}
+              onClick={() => setFilters({ ...filters, startDate: p.from, endDate: p.to })}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+
+        {showMore && (
+          <form id="more-filters" className="row more-filters" onSubmit={(e) => e.preventDefault()}>
+            <label>Category
+              <select value={filters.categoryId} onChange={setFilter('categoryId')}>
+                <option value="">All</option>
+                {lookups.categories.map((c) => <option key={c.categoryId} value={c.categoryId}>{c.categoryName}</option>)}
+              </select>
+            </label>
+            <label>Subcategory
+              <select value={filters.subCategoryId} onChange={setFilter('subCategoryId')}>
+                <option value="">All</option>
+                {lookups.subcategories
+                  .filter((sc) => !filters.categoryId || sc.categoryId === filters.categoryId)
+                  .map((sc) => <option key={sc.subcategoryId} value={sc.subcategoryId}>{sc.subcategoryName}</option>)}
+              </select>
+            </label>
+            <label>Payment method
+              <select value={filters.paymentMethodId} onChange={setFilter('paymentMethodId')}>
+                <option value="">All</option>
+                {lookups.paymentMethods.map((m) => <option key={m.paymentMethodId} value={m.paymentMethodId}>{m.paymentMethodName}</option>)}
+              </select>
+            </label>
+            <label>Bank account
+              <select value={filters.bankAccountId} onChange={setFilter('bankAccountId')}>
+                <option value="">All</option>
+                <option value="none">No account</option>
+                {lookups.bankAccounts.map((b) => <option key={b.bankAccountId} value={b.bankAccountId}>{b.bankAccountName}</option>)}
+              </select>
+            </label>
+            <label>Min amount
+              <DebouncedInput type="number" min="0" step="1" inputMode="decimal" placeholder="₹0" ariaLabel="Minimum amount" value={filters.minAmount} onChange={(v) => setFilters({ ...filters, minAmount: v })} />
+            </label>
+            <label>Max amount
+              <DebouncedInput type="number" min="0" step="1" inputMode="decimal" placeholder="Any" ariaLabel="Maximum amount" value={filters.maxAmount} onChange={(v) => setFilters({ ...filters, maxAmount: v })} />
+            </label>
+          </form>
+        )}
+
+        {chips.length > 0 && (
+          <div className="filter-chips" aria-label="Active filters">
+            {chips.map((c) => (
+              <button key={c.label} type="button" className="chip-btn on" onClick={() => clearKeys(c.keys)} aria-label={`Remove filter ${c.label}`}>
+                {c.label} <X size={13} />
+              </button>
+            ))}
+            <button type="button" className="linkish clear-all" onClick={() => setFilters(EMPTY_FILTERS)}>Clear all</button>
+          </div>
+        )}
       </div>
 
       <div className="card flush table-wrap">
@@ -282,21 +374,17 @@ function ExpenseForm({ expense, lookups, onCancel, onSaved }) {
   )
 }
 
-function SearchBox({ value, onChange }) {
+/** Input that waits for a pause in typing before reporting its value. */
+function DebouncedInput({ value, onChange, icon, className, ariaLabel, ...rest }) {
   const [text, setText] = useState(value)
   useEffect(() => setText(value), [value])
-  // Wait for a pause in typing before filtering
   useEffect(() => {
     if (text === value) return undefined
-    const t = setTimeout(() => onChange(text.trim()), 350)
+    const t = setTimeout(() => onChange(text.trim()), 400)
     return () => clearTimeout(t)
   }, [text, value, onChange])
-  return (
-    <label className="search-box" aria-label="Search descriptions">
-      <Search size={15} />
-      <input type="search" placeholder="Search descriptions" value={text} onChange={(e) => setText(e.target.value)} />
-    </label>
-  )
+  const input = <input {...rest} aria-label={ariaLabel} value={text} onChange={(e) => setText(e.target.value)} />
+  return icon ? <label className={className}>{icon}{input}</label> : input
 }
 
 const csvCell = (v) => {
@@ -308,15 +396,7 @@ const csvCell = (v) => {
 async function exportCsv(filters) {
   const rows = []
   for (let page = 0; page < 100; page++) {
-    const res = await api.expenses.list({
-      categoryId: filters.categoryId,
-      subCategoryId: filters.subCategoryId,
-      startDate: filters.startDate && `${filters.startDate}T00:00:00`,
-      endDate: filters.endDate && `${filters.endDate}T23:59:59`,
-      q: filters.q,
-      page,
-      pageSize: 100,
-    })
+    const res = await api.expenses.list({ ...toQuery(filters), page, pageSize: 100 })
     rows.push(...res.expenses)
     if (page + 1 >= res.totalPages) break
   }
